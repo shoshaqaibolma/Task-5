@@ -61,12 +61,7 @@ def extract_sheet_id(url_or_id: str) -> str:
 
 
 def fetch_csv(sheet_id: str, sheet_name: str) -> str:
-    """
-    Fetch a public Google Sheet as CSV.
 
-    The sheet must be shared as:
-    Anyone with the link -> Viewer
-    """
 
     url = (
         f"https://docs.google.com/spreadsheets/d/"
@@ -118,15 +113,7 @@ def _is_date_str(x) -> bool:
 
 
 def _normalize_number_str(x) -> str:
-    """
-    Turn a locale-formatted number into a plain float string.
 
-    Handles:
-        "2 294,97"   (RU/EU: space or NBSP thousands, comma decimal)
-        "2.294,97"   (DE: dot thousands, comma decimal)
-        "2,294.97"   (EN: comma thousands, dot decimal)
-        "768,06" -> "768.06"
-    """
     if x is None:
         return ""
 
@@ -168,15 +155,7 @@ def _is_number_str(x) -> bool:
 
 
 def parse_sheet(csv_text: str) -> pd.DataFrame:
-    """
-    Parse Google Sheet CSV.
 
-    Works with or without header row.
-    Expected shape:
-
-        Date | Mine 1 | Mine 2 | ... | Optional Total
-
-    """
 
     raw = pd.read_csv(
         io.StringIO(csv_text),
@@ -343,11 +322,7 @@ def series_stats(s: pd.Series, iqr_k: float) -> dict:
 
 
 def grubbs_indices(s: pd.Series, alpha: float, max_outliers: int):
-    """
-    Iterative Grubbs test.
 
-    Returns original pandas index labels of detected outliers.
-    """
 
     current = s.dropna().copy()
     found = []
