@@ -546,8 +546,11 @@ def poly_trend(
     degree: int,
     anomaly_dates=None,
 ):
-    x = dates.dt.toordinal().values.astype(float)
-    y = values.values.astype(float)
+    dates = pd.to_datetime(dates).reset_index(drop=True)
+    values = pd.Series(values).reset_index(drop=True)
+
+    x = ((dates - dates.min()).dt.total_seconds() / 86400.0).values
+    y = pd.to_numeric(values, errors="coerce").values.astype(float)
 
     valid = np.isfinite(y)
 
@@ -1462,7 +1465,7 @@ with tab_stats:
 
     st.dataframe(
         stats_df.style.format(lambda x: fmt(x, 2)),
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -1480,7 +1483,7 @@ with tab_charts:
                 degree,
                 anomalies_df,
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
         if total_col:
@@ -1493,7 +1496,7 @@ with tab_charts:
                     degree,
                     anomalies_df,
                 ),
-                use_container_width=True,
+                width="stretch",
             )
 
     else:
@@ -1507,7 +1510,7 @@ with tab_charts:
                     degree,
                     anomalies_df,
                 ),
-                use_container_width=True,
+                width="stretch",
             )
 
 
@@ -1541,7 +1544,7 @@ with tab_anomalies:
 
         st.dataframe(
             filtered_anomalies,
-            use_container_width=True,
+            width="stretch",
         )
 
         st.caption(
@@ -1556,7 +1559,7 @@ with tab_data:
 
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
     )
 
 
