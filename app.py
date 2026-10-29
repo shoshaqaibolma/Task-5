@@ -34,20 +34,16 @@ from reportlab.platypus import (
 )
 
 
-# ============================================================
-# DEFAULT SETTINGS
-# ============================================================
 
-# You can put your spreadsheet ID here permanently.
-# Or paste the URL into the sidebar when the app is running.
 
-DEFAULT_SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
+DEFAULT_SPREADSHEET_ID = os.getenv(
+    "SPREADSHEET_ID",
+    "1NTN25CN-PfUbPKnS1cwcBHhEqlqLqodzuTHLQvltLXY",
+)
 DEFAULT_SHEET_NAME = os.getenv("SHEET_NAME", "Final")
 
 
-# ============================================================
-# GOOGLE SHEET LOADING
-# ============================================================
+
 
 def extract_sheet_id(url_or_id: str) -> str:
     url_or_id = url_or_id.strip()
@@ -121,18 +117,54 @@ def _is_date_str(x) -> bool:
         return False
 
 
-def _is_number_str(x) -> bool:
-    x = str(x).strip()
-    x = x.replace(",", "").replace(" ", "")
+def _normalize_number_str(x) -> str:
+    """
+    Turn a locale-formatted number into a plain float string.
 
-    if not x:
-        return False
+    Handles:
+        "2 294,97"   (RU/EU: space or NBSP thousands, comma decimal)
+        "2.294,97"   (DE: dot thousands, comma decimal)
+        "2,294.97"   (EN: comma thousands, dot decimal)
+        "768,06" -> "768.06"
+    """
+    if x is None:
+        return ""
+
+    s = str(x).strip()
+
+    if s.lower() in ("", "nan", "none"):
+        return ""
+
+
+    s = re.sub(r"[\s   ']", "", s)
+
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif s.count(",") == 1:
+        s = s.replace(",", ".")
+    elif s.count(",") > 1:
+        s = s.replace(",", "")
+
+    return s
+
+
+def _to_number(x) -> float:
+    s = _normalize_number_str(x)
+
+    if not s:
+        return np.nan
 
     try:
-        float(x)
-        return True
+        return float(s)
     except Exception:
-        return False
+        return np.nan
+
+
+def _is_number_str(x) -> bool:
+    return np.isfinite(_to_number(x))
 
 
 def parse_sheet(csv_text: str) -> pd.DataFrame:
@@ -174,9 +206,11 @@ def parse_sheet(csv_text: str) -> pd.DataFrame:
 
     header = 0 if has_header else None
 
+
     df = pd.read_csv(
         io.StringIO(csv_text),
         header=header,
+        dtype=str,
     )
 
     df = df.dropna(axis=1, how="all")
@@ -209,24 +243,14 @@ def parse_sheet(csv_text: str) -> pd.DataFrame:
     numeric_cols = []
 
     for c in df.columns[1:]:
-        if df[c].dtype == object:
-            df[c] = (
-                df[c]
-                .astype(str)
-                .str.replace(",", "", regex=False)
-                .str.replace(" ", "", regex=False)
-            )
 
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+        df[c] = df[c].map(_to_number).astype(float)
 
         if df[c].notna().any():
             numeric_cols.append(c)
 
     df = df[[date_col] + numeric_cols]
 
-    # Try to detect if the last column is Total.
-    # If last column is approximately sum of previous columns,
-    # rename it to Total.
 
     if len(numeric_cols) >= 2:
         last_col = numeric_cols[-1]
@@ -282,9 +306,7 @@ def split_columns(df: pd.DataFrame):
     return date_col, mine_cols, total_col
 
 
-# ============================================================
-# STATISTICS
-# ============================================================
+
 
 def series_stats(s: pd.Series, iqr_k: float) -> dict:
     s = s.dropna()
@@ -319,9 +341,6 @@ def series_stats(s: pd.Series, iqr_k: float) -> dict:
     }
 
 
-# ============================================================
-# ANOMALY DETECTION
-# ============================================================
 
 def grubbs_indices(s: pd.Series, alpha: float, max_outliers: int):
     """
@@ -381,7 +400,7 @@ def detect_anomalies(
     mean = s[valid].mean()
     std = s[valid].std()
 
-    # Z-score
+
 
     z = pd.Series(np.nan, index=df.index)
 
@@ -391,7 +410,7 @@ def detect_anomalies(
     z_mask = pd.Series(False, index=df.index)
     z_mask.loc[valid] = z[valid].abs() > params["z_threshold"]
 
-    # IQR rule
+
 
     q1 = s[valid].quantile(0.25)
     q3 = s[valid].quantile(0.75)
@@ -403,7 +422,6 @@ def detect_anomalies(
     iqr_mask = pd.Series(False, index=df.index)
     iqr_mask.loc[valid] = (s[valid] < lower) | (s[valid] > upper)
 
-    # Moving average percentage deviation
 
     ma = s.rolling(
         window=params["ma_window"],
@@ -419,7 +437,6 @@ def detect_anomalies(
     ma_mask = pd.Series(False, index=df.index)
     ma_mask.loc[valid] = pct[valid].abs() > params["ma_pct"]
 
-    # Grubbs
 
     if params["max_grubbs"] > 0:
         g_idx = grubbs_indices(
@@ -521,9 +538,7 @@ def detect_all_anomalies(
     return anomalies
 
 
-# ============================================================
-# POLYNOMIAL TRENDLINE HELPER
-# ============================================================
+
 
 def poly_trend(
     dates: pd.Series,
@@ -551,9 +566,6 @@ def poly_trend(
     return trend
 
 
-# ============================================================
-# PLOTLY CHARTS
-# ============================================================
 
 def plotly_series(
     df: pd.DataFrame,
@@ -747,9 +759,7 @@ def plotly_stacked(
     return fig
 
 
-# ============================================================
-# MATPLOTLIB CHARTS FOR PDF
-# ============================================================
+
 
 def mpl_series(
     df: pd.DataFrame,
@@ -921,9 +931,6 @@ def mpl_stacked(
     return fig
 
 
-# ============================================================
-# PDF REPORT
-# ============================================================
 
 def fmt(x, nd: int = 2) -> str:
     if x is None:
@@ -1042,7 +1049,7 @@ def build_pdf_report(
 
     story.append(Spacer(1, 8))
 
-    # Parameters
+
 
     story.append(
         Paragraph("Analysis parameters", styles["Heading2"])
@@ -1064,7 +1071,7 @@ def build_pdf_report(
     story.append(make_reportlab_table(param_rows))
     story.append(Spacer(1, 10))
 
-    # Summary statistics
+
 
     story.append(
         Paragraph("Summary statistics", styles["Heading2"])
@@ -1107,7 +1114,7 @@ def build_pdf_report(
     story.append(make_reportlab_table(stats_rows))
     story.append(PageBreak())
 
-    # Charts
+
 
     story.append(Paragraph("Charts", styles["Heading2"]))
 
@@ -1152,7 +1159,7 @@ def build_pdf_report(
 
     story.append(PageBreak())
 
-    # Anomaly details
+
 
     story.append(Paragraph("Anomaly details", styles["Heading2"]))
 
@@ -1221,9 +1228,7 @@ def build_pdf_report(
     return pdf_bytes
 
 
-# ============================================================
-# STREAMLIT UI
-# ============================================================
+
 
 st.set_page_config(
     page_title="Mine Output Dashboard",
@@ -1237,7 +1242,6 @@ st.caption(
 )
 
 
-# Sidebar
 
 st.sidebar.header("Data source")
 
@@ -1319,7 +1323,6 @@ with st.sidebar.expander("Parameters", expanded=True):
     )
 
 
-# Load data
 
 sheet_id = extract_sheet_id(url_input)
 
@@ -1376,7 +1379,6 @@ params = {
 }
 
 
-# Compute statistics and anomalies
 
 stats_by_series = {
     s: series_stats(df[s], params["iqr_k"])
@@ -1391,7 +1393,6 @@ anomalies_df = detect_all_anomalies(
 )
 
 
-# Top metrics
 
 st.subheader("Overview")
 
@@ -1441,7 +1442,6 @@ else:
     )
 
 
-# Tabs
 
 tab_stats, tab_charts, tab_anomalies, tab_data = st.tabs(
     [
@@ -1453,7 +1453,6 @@ tab_stats, tab_charts, tab_anomalies, tab_data = st.tabs(
 )
 
 
-# Statistics tab
 
 with tab_stats:
     st.subheader("Statistics by mine and total")
@@ -1467,7 +1466,6 @@ with tab_stats:
     )
 
 
-# Charts tab
 
 with tab_charts:
     st.subheader("Output charts")
@@ -1513,7 +1511,6 @@ with tab_charts:
             )
 
 
-# Anomalies tab
 
 with tab_anomalies:
     st.subheader("Detected anomalies")
@@ -1553,7 +1550,6 @@ with tab_anomalies:
         )
 
 
-# Raw data tab
 
 with tab_data:
     st.subheader("Loaded data")
@@ -1564,7 +1560,6 @@ with tab_data:
     )
 
 
-# PDF report
 
 st.sidebar.markdown("---")
 
